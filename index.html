@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+<title>自媒体创作工作台</title>
+<style>
+  html,body{height:100%;margin:0;background:#f4f3f0;color:#232220;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;}
+  .tip{position:fixed;inset:0;display:grid;place-items:center;font-size:15px;color:#8c877c;}
+</style>
+<script>
+  // 自动识别设备：手机进 mobile 版，电脑进 desktop 版
+  if(/Android|iPhone|iPad|iPod|Mobile|HarmonyOS/i.test(navigator.userAgent) ||
+     (window.matchMedia && matchMedia("(max-width: 768px)").matches)){
+    location.replace("workbench-mobile.html");
+  } else {
+    location.replace("workbench-desktop.html");
+  }
+</script>
+</head>
+<body><div class="tip">正在进入工作台…</div></body>
+</html>
