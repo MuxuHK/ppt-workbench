@@ -546,8 +546,20 @@
 
   .hidden { display:none !important; }
 </style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
+<!-- 团队密码门：输对密码才进入并启动云端同步 -->
+<div id="wbGate" style="position:fixed;inset:0;z-index:99999;display:none;align-items:center;justify-content:center;background:#101418;">
+  <div style="width:min(340px,86vw);padding:36px 30px;border-radius:18px;background:#171c22;border:1px solid #2a323c;box-shadow:0 20px 60px rgba(0,0,0,.5);text-align:center;font-family:system-ui,-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;">
+    <svg viewBox="0 0 24 24" width="38" height="38" fill="none" stroke="#f5c451" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:12px;"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+    <div style="color:#e8ecf1;font-size:18px;font-weight:700;margin-bottom:6px;">团队工作台</div>
+    <div style="color:#8a94a3;font-size:13px;margin-bottom:22px;">请输入团队密码进入</div>
+    <input id="wbGatePw" type="password" placeholder="团队密码" autocomplete="off" style="width:100%;box-sizing:border-box;padding:12px 14px;border-radius:10px;border:1px solid #2a323c;background:#10141a;color:#e8ecf1;font-size:15px;outline:none;margin-bottom:12px;"/>
+    <button id="wbGateOk" style="width:100%;padding:12px;border:none;border-radius:10px;background:linear-gradient(135deg,#f5c451,#e8a33d);color:#1c1c1c;font-size:15px;font-weight:700;cursor:pointer;">进入工作台</button>
+    <div id="wbGateErr" style="color:#ff7b72;font-size:12px;margin-top:10px;min-height:16px;"></div>
+  </div>
+</div>
 <div class="layout">
   <!-- sidebar -->
   <aside class="sidebar">
@@ -731,7 +743,7 @@ const store = {
     if(raw){ try { return JSON.parse(raw); } catch(e){} }
     const d={}; CONFIG.modules.forEach(m=>d[m.key]=structuredClone(m.seed||[])); return d;
   },
-  save(){ localStorage.setItem(CONFIG.storageKey, JSON.stringify(data)); },
+  save(){ localStorage.setItem(CONFIG.storageKey, JSON.stringify(data)); cloudSchedulePush(); },
 };
 let data = store.load();
 /* 账号列表存在 data.__accounts（可在作品库页增删），首次运行从 CONFIG 初始化 */
@@ -740,6 +752,70 @@ if(!Array.isArray(data.__accounts)){
   store.save();
 }
 function getAccounts(){ return data.__accounts||[]; }
+
+/* ============================================================
+   CLOUD — Supabase 云端同步（团队共享，一处更新处处可见）
+   ============================================================ */
+const CLOUD = {
+  url: "https://cdrxvppfpsznnwkxqejh.supabase.co",
+  key: "sb_publishable_YgyGx1ILKwEYlX8BgJCoaQ_n7P7Flxy",
+  rowId: "main",
+  pwHash: "179d82c23cc96bef4fcbb2886c7a6ac8b4089580a30d4a3905726d89350078ee",
+};
+var cloud = { sb:null, active:false, lastRev:0, pushing:false, timer:null };
+function cloudFillKeys(){
+  CONFIG.modules.forEach(m=>{ if(!Array.isArray(data[m.key])) data[m.key]=structuredClone(m.seed||[]); });
+  if(!Array.isArray(data.__accounts)) data.__accounts=structuredClone((CONFIG.modules.find(m=>m.key==="works")||{}).accounts||[]);
+}
+function cloudApplyRemote(row){
+  if(!row||!row.data) return;
+  const rev=row.data.__rev||0;
+  if(rev<cloud.lastRev) return;                 // 过期事件，忽略
+  cloud.lastRev=Math.max(cloud.lastRev,rev);
+  data=row.data; cloudFillKeys();
+  localStorage.setItem(CONFIG.storageKey, JSON.stringify(data));
+  render();
+}
+function cloudSchedulePush(){
+  if(!cloud||!cloud.active) return;
+  clearTimeout(cloud.timer);
+  cloud.timer=setTimeout(cloudPush,700);        // 防抖：连续操作合并为一次上传
+}
+async function cloudPush(){
+  if(!cloud.active) return;
+  if(cloud.pushing){ cloudSchedulePush(); return; }
+  cloud.pushing=true;
+  try{
+    data.__rev=(data.__rev||0)+1; cloud.lastRev=data.__rev;
+    await cloud.sb.from("wb_data").upsert({ id:CLOUD.rowId, data:data, updated_at:new Date().toISOString() });
+  }catch(e){}
+  cloud.pushing=false;
+}
+async function cloudRefetch(){
+  if(!cloud.active) return;
+  try{
+    const r=await cloud.sb.from("wb_data").select("*").eq("id",CLOUD.rowId).maybeSingle();
+    if(r&&r.data) cloudApplyRemote(r.data);
+  }catch(e){}
+}
+async function cloudStart(){
+  if(cloud.active) return;
+  if(typeof supabase==="undefined") return;     // CDN 加载失败：退回本地模式
+  try{ cloud.sb=supabase.createClient(CLOUD.url,CLOUD.key); }catch(e){ return; }
+  cloud.active=true;
+  /* 首次：云端有数据则采用，云端为空则把本地数据迁上云 */
+  try{
+    const r=await cloud.sb.from("wb_data").select("*").eq("id",CLOUD.rowId).maybeSingle();
+    const row=r&&r.data, cloudRev=row&&row.data?(row.data.__rev||0):0;
+    if(cloudRev>(data.__rev||0)) cloudApplyRemote(row);
+    else if(cloudRev===0) cloudPush();
+  }catch(e){}
+  /* 实时订阅：他人改动秒级到达 */
+  cloud.sb.channel("wb-sync")
+    .on("postgres_changes",{event:"*",schema:"public",table:"wb_data"},p=>{ if(p&&p.new) cloudApplyRemote(p.new); })
+    .subscribe();
+  document.addEventListener("visibilitychange",()=>{ if(!document.hidden) cloudRefetch(); });
+}
 let view = "home";
 let searchQ = "";
 let pomo = { running:false, remain:25*60, total:25*60 };   // 番茄钟状态（内存态，跨渲染保留）
@@ -1464,6 +1540,25 @@ function attr(s){ return esc(s).replace(/"/g,'&quot;'); }
 
 buildNav();
 render();
+
+/* ---------- 团队密码门 + 云端同步启动 ---------- */
+(function(){
+  const gate=document.getElementById("wbGate");
+  const boot=()=>{ try{ cloudStart(); }catch(e){} };
+  if(sessionStorage.getItem("wb_auth")==="1"){ boot(); return; }
+  gate.style.display="flex";
+  const input=document.getElementById("wbGatePw"), ok=document.getElementById("wbGateOk"), err=document.getElementById("wbGateErr");
+  async function unlock(){
+    const pw=input.value; if(!pw) return;
+    if(!(window.crypto&&crypto.subtle)){ err.textContent="当前环境不支持安全校验，请用 Chrome / Safari 打开"; return; }
+    const buf=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(pw));
+    const h=[...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,"0")).join("");
+    if(h===CLOUD.pwHash){ sessionStorage.setItem("wb_auth","1"); gate.style.display="none"; boot(); }
+    else{ err.textContent="密码不对，再试试"; input.value=""; input.focus(); }
+  }
+  ok.onclick=unlock;
+  input.onkeydown=e=>{ if(e.key==="Enter") unlock(); };
+})();
 </script>
 </body>
 </html>
