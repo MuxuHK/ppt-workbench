@@ -1149,7 +1149,7 @@ function renderModule(key){
   $("#screen").innerHTML=`<div class="header"><div><h2>${m.name}</h2><p>${m.desc}</p></div><div class="spacer"></div><span class="date-chip">${icon("calendar",14)} ${dateStr()}</span></div>
     <div class="toolbar">
       <div class="search-box">${icon("search",15,2.2)}<input id="search" placeholder="搜索…" value="${attr(searchQ)}"/></div>
-      <div class="spacer"></div><button class="btn" id="btn-new">${icon("plus",16,2.2)}新建</button></div>
+      <div class="spacer"></div>${m.type==="todo"?`<button class="btn ghost" id="btn-clear-todo">${icon("trash",15,2.2)}清空记录</button>`:""}<button class="btn" id="btn-new">${icon("plus",16,2.2)}新建</button></div>
     ${head}
     ${accPanel}
     <div class="mod-layout">
@@ -1400,6 +1400,16 @@ function wireModule(key){ const m=modOf(key);
       data.__accounts=data.__accounts.filter(x=>x.id!==a.id);
       (data.works||[]).forEach(w=>{ if(w.sent) delete w.sent[a.id]; });
       persist(); });
+  }
+  // 每日任务：一键清空全部记录
+  if(key==="todo"){
+    const c=$("#btn-clear-todo");
+    if(c) c.onclick=()=>{
+      const n=(data.todo||[]).length;
+      if(!n){ alert("还没有任务记录"); return; }
+      if(!confirm(`确定一键删除全部 ${n} 条任务记录？此操作不可恢复。`)) return;
+      data.todo=[]; persist();
+    };
   }
   $("#screen").querySelectorAll(".js-del").forEach(el=>el.onclick=e=>{ e.stopPropagation(); confirmDelete(key, el.dataset.id); });
   $("#screen").querySelectorAll(".js-pin").forEach(el=>el.onclick=e=>{ e.stopPropagation(); const x=(data[key]).find(i=>i.id==el.dataset.id); x.pinned=!x.pinned; persist(); });
