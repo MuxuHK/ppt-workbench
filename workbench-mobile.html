@@ -1276,6 +1276,7 @@ function newItem(m){
   else item={...base, title:"", content:"", mood:(m.moods&&m.moods[0])||"", date:isoToday()};
   // initialize custom fields
   (m.fields||[]).forEach(f=>{ if(!(f.key in item)) item[f.key]= f.type==="select"?(f.options&&f.options[0]||""):""; });
+  if(m.key==="works") item.status="分发中";   // 新作品默认「分发中」
   return item;
 }
 
