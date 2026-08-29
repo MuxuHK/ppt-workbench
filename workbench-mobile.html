@@ -116,6 +116,9 @@
     transition: transform .12s, filter .15s; }
   .greet .add:active { transform: scale(.95); filter: brightness(1.15); }
   .greet .add svg { margin-top: -1px; }
+  .greet-actions { position: absolute; top: 16px; right: 16px; z-index: 2; display:flex; gap:8px; }
+  .greet-actions .add { position: static; box-shadow: var(--shadow-overlay); }
+  .greet-actions .add.ghost { background: var(--surface-nested); color: var(--text-secondary); border: 1px solid var(--border-input); }
 
   /* ---------- quote card ---------- */
   .quote { margin-top: 16px; padding: 16px 18px; border-radius: var(--radius-card);
@@ -1000,7 +1003,7 @@ function renderModule(key){
     : `<div class="empty"><span class="e">${icon(m.icon,26)}</span><div>还没有记录，点上方「新建」添加第一条吧</div></div>`;
   const accPanel = key==="works" ? accMgmtHTML() : "";
   $("#screen").innerHTML = `<div class="greet"><div><h1>${m.name}</h1><p>${m.desc}</p></div>
-      <button class="add" id="btn-add">${icon("plus",16,2.2)}新建</button></div>
+      <div class="greet-actions">${m.type==="todo"?`<button class="add ghost" id="btn-clear-todo">${icon("trash",15,2.2)}清空</button>`:""}<button class="add" id="btn-add">${icon("plus",16,2.2)}新建</button></div></div>
     <div style="margin-top:16px">${head}${accPanel}${extra}
       <div class="sec-title">记录</div>${body}</div>`;
   wireModule(key);
@@ -1160,6 +1163,16 @@ function wireModule(key){
       data.__accounts=data.__accounts.filter(x=>x.id!==a.id);
       (data.works||[]).forEach(w=>{ if(w.sent) delete w.sent[a.id]; });
       persist(); });
+  }
+  // 每日任务：一键清空全部记录
+  if(key==="todo"){
+    const c=$("#btn-clear-todo");
+    if(c) c.onclick=()=>{
+      const n=(data.todo||[]).length;
+      if(!n){ alert("还没有任务记录"); return; }
+      if(!confirm(`确定一键删除全部 ${n} 条任务记录？此操作不可恢复。`)) return;
+      data.todo=[]; persist();
+    };
   }
   $("#screen").querySelectorAll(".js-del").forEach(el=>el.onclick=e=>{ e.stopPropagation(); confirmDelete(key, el.dataset.id); });
   $("#screen").querySelectorAll(".js-pin").forEach(el=>el.onclick=e=>{ e.stopPropagation(); const x=(data[key]).find(i=>i.id==el.dataset.id); x.pinned=!x.pinned; persist(); });
